@@ -5,14 +5,16 @@ use {
         msg,
         program_error::ProgramError,
         pubkey::Pubkey,
-        program::{invoke, invoke_signed},
-        program_pack::Pack   
+        program::{invoke},
+        program_pack::Pack,
+        system_instruction  
     },
     borsh::{BorshDeserialize, BorshSerialize},
-    spl_token::state::Account as TokenAccount
-};
-use spl_token_metadata::{
-    state::{Metadata}
+    spl_token::state::{Account as TokenAccount, Mint},
+    spl_token_metadata::{
+        instruction::{ update_metadata_accounts },
+        state::{Metadata},
+    },
 };
 
 use crate::{
@@ -45,6 +47,8 @@ pub struct UpdateRecordArgs {
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub struct BuyRecordArgs {
     pub hero_id: u8,
+    pub dead_uri: String,
+    pub dead_name: String
 }
 
 
@@ -69,10 +73,13 @@ impl Processor {
             HeroInstruction::BuyRecord(args) => {
                 msg!("Instruction: BuyRecord");
                 Self::process_buy_record(accounts, &args, program_id)
+            },
+            HeroInstruction::OnChainMinting => {
+                Ok(())//Self::on_chain_minting(accounts, program_id)
             }
         }
     }
-
+    
     /// Add seats to our repository account. 
     /// Now Seat Count is limited to 20. It can be expanded further.
     /// 1. we need to approve pda to delegate seat.
@@ -93,6 +100,7 @@ impl Processor {
         
         // account which we will save all hero informations
         let repository_account = next_account_info(account_info_iter)?;
+    
         if repository_account.owner != program_id {
             msg!("Derived account does not have the correct program id");
             return Err(ProgramError::IncorrectProgramId);
@@ -110,6 +118,7 @@ impl Processor {
         let token_program = next_account_info(account_info_iter)?;
         msg!("token_program ={:?}", token_program);
 
+        /*
         // approve
         let approve_ix = spl_token::instruction::approve(
             token_program.key,
@@ -128,7 +137,7 @@ impl Processor {
                 token_program.clone(),
             ],
         )?;
-
+        */
         // save new nft record to our repository
         let nft_record = NFTRecord {
             hero_id: args.hero_id,
@@ -225,14 +234,14 @@ impl Processor {
     ) -> ProgramResult {
         msg!("process_buy_record");
         let account_info_iter = &mut accounts.iter();
+        
+        let admin_account = next_account_info(account_info_iter)?;
 
         let buyer_account = next_account_info(account_info_iter)?;
         if !buyer_account.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
         }
-
         let prev_owner_account = next_account_info(account_info_iter)?;
-        
         let repository_account = next_account_info(account_info_iter)?;
         if repository_account.owner != program_id {
             msg!("Derived account does not have the correct program id");
@@ -240,76 +249,76 @@ impl Processor {
         }
 
         // nft token mint account
-        let nft_account = next_account_info(account_info_iter)?;
+        let old_nft_mint = next_account_info(account_info_iter)?;
 
         // prev_owner's associated token Account to send NFT
-        let nft_account_to_send = next_account_info(account_info_iter)?;
-        
+        let old_nft_token_account = next_account_info(account_info_iter)?;
+        let old_nft_metadata_account = next_account_info(account_info_iter)?;
+
         // verify ownership of nft with prev_owner's associated token account
         // associated token account of hero mint token address
-        let token_account_info = TokenAccount::unpack_from_slice(&nft_account_to_send.data.borrow())?;
-        if token_account_info.owner != *prev_owner_account.key || token_account_info.mint != *nft_account.key {
-            msg!("NFT is not owned by prev_owner.");
+        let token_account_info = TokenAccount::unpack_from_slice(&old_nft_token_account.data.borrow())?;
+        if token_account_info.owner != *prev_owner_account.key || token_account_info.mint != *old_nft_mint.key {
+            msg!("Old NFT is not owned by prev_owner.");
             return Err(ProgramError::InvalidArgument);
         }
 
+        // nft token mint account
+        let new_nft_mint = next_account_info(account_info_iter)?;
+        // admin's token Account tosend NFT
+        let nft_token_account_to_send = next_account_info(account_info_iter)?;
+        
         // buyer's token Account to receive NFT
-        let nft_account_to_receive = next_account_info(account_info_iter)?;
+        let nft_token_account_to_receive = next_account_info(account_info_iter)?;
 
-        let (pda, _nonce) = Pubkey::find_program_address(&[b"hallofheros"], program_id);
-        let pda_account = next_account_info(account_info_iter)?;
+        //let (pda, _nonce) = Pubkey::find_program_address(&[b"hallofheros"], program_id);
+        //let pda_account = next_account_info(account_info_iter)?;
+
         let token_program = next_account_info(account_info_iter)?;
 
         // transfer NFT from 'nft_account_to_send' to 'nft_account_to_receive'
-        // pda signed invoke
+        
+        msg!("before transfer instruction");
         let transfer_ix = spl_token::instruction::transfer(
             token_program.key,
-            nft_account_to_send.key,
-            nft_account_to_receive.key,
-            &pda,
-            &[],
-            1
-        )?;
-        invoke_signed(
-            &transfer_ix,
-            &[
-                nft_account_to_send.clone(),
-                nft_account_to_receive.clone(),
-                pda_account.clone(),
-                token_program.clone(),
-            ],
-            &[&[&b"hallofheros"[..], &[_nonce]]]
-        )?;
-        
-        // after receiving NFT, pda needs to get approved for further sale.
-        let approve_ix = spl_token::instruction::approve(
-            token_program.key,
-            nft_account_to_receive.key,
-            &pda,
-            buyer_account.key,
-            &[&buyer_account.key],
+            nft_token_account_to_send.key,
+            nft_token_account_to_receive.key,
+            admin_account.key,
+            &[admin_account.key],
             1
         )?;
         invoke(
-            &approve_ix,
+            &transfer_ix,
             &[
-                nft_account_to_receive.clone(),
-                pda_account.clone(),
-                buyer_account.clone(),
+                nft_token_account_to_send.clone(),
+                nft_token_account_to_receive.clone(),
+                admin_account.clone(),
                 token_program.clone(),
             ],
         )?;
+
+        let token_metadata_program = next_account_info(account_info_iter)?;
         
+        Self::update_metadata_old_nft(
+            admin_account.clone(),
+            old_nft_mint.clone(),
+            old_nft_metadata_account.clone(),
+            token_metadata_program.clone(),
+            &args
+        )?;
+
         // get nft listed price from repository account
         let mut nft_record = Self::get_nft_data_from_repository(
             args.hero_id, 
-            nft_account.key,
+            old_nft_mint.key,
             repository_account.clone(),
-            nft_account.clone()
+            old_nft_mint.clone()
         ).unwrap();
 
         // update nft last price with listed_price
         nft_record.last_price = nft_record.listed_price;
+        // update nft key
+        nft_record.key_nft = *new_nft_mint.key;
         Self::save_nft_data_to_repository(&nft_record, repository_account.clone())?;
 
         msg!("before send sol. price={:?}", nft_record.listed_price);
@@ -365,4 +374,99 @@ impl Processor {
         nft_record.serialize(&mut &mut repository_account.data.borrow_mut()[start..end])?;
         Ok(())
     }
+
+    
+    // update metadata account
+    fn update_metadata_old_nft<'a>(
+        admin_account: AccountInfo<'a>,
+        old_nft_mint: AccountInfo<'a>,
+        old_nft_metadata_account: AccountInfo<'a>,
+        token_metadata_program: AccountInfo<'a>,
+        args: &BuyRecordArgs,
+    ) -> Result<(), ProgramError> {
+        
+        let mut old_metadata = Metadata::from_account_info(&old_nft_metadata_account).unwrap();
+        // verify validation of metadata account
+        if old_nft_metadata_account.owner != token_metadata_program.key 
+            || old_metadata.mint != *old_nft_mint.key
+        {
+            msg!("nft_metadata_account is not valid account");
+            return Err(ProgramError::InvalidAccountData);
+        }
+        old_metadata.data.uri = args.dead_uri.to_string();
+        old_metadata.data.name = args.dead_name.to_string();
+        let update_metadata_instruction = update_metadata_accounts(
+            spl_token_metadata::id(),       // program_id
+            *old_nft_metadata_account.key,   // metadata_account
+            *admin_account.key,              // update_authority
+            Some(*admin_account.key),              // new_update_authority
+            Some(old_metadata.data),              // data
+            Some(true)                            // primary_sale_happened
+        );
+        invoke(
+            &update_metadata_instruction,
+            &[
+                old_nft_metadata_account.clone(),
+                admin_account.clone(),
+                old_nft_metadata_account.clone(),
+                token_metadata_program.clone()
+            ]
+        )
+    }
+
+    // for test
+    
+    /*
+    fn on_chain_minting(
+        accounts: &[AccountInfo],
+        program_id: &Pubkey
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let admin_account = next_account_info(account_info_iter)?;
+        Self::create_mint_account(admin_account.clone());
+
+        Ok(())
+    }   
+
+    fn create_mint_account<'a>(
+        admin_account: AccountInfo<'a>,
+        new_mint_account: AccountInfo<'a>
+    ) -> Pubkey {
+        let create_account_instruction = system_instruction::create_account(
+            &admin_account.key,
+            &new_mint_account.key,
+            1000000000,
+            Mint::LEN as u64,
+            &spl_token::id(),
+        );
+        invoke(
+            &create_account_instruction,
+            &[
+                admin_account.clone(),
+                new_mint_account.clone(),
+                token_metadata_program.clone()
+            ]
+        );
+
+        let initialize_mint_instruction = spl_token::instruction::initialize_mint(
+            &spl_token::id(),
+            &new_mint_account.key,
+            &admin_account.key,
+            None,
+            0,
+        )
+        .unwrap();
+        
+
+        invoke(
+            &create_account_instruction,
+            &[
+                old_nft_metadata_account.clone(),
+                admin_account.clone(),
+                old_nft_metadata_account.clone(),
+                token_metadata_program.clone()
+            ]
+        );
+        
+    }*/
 }

@@ -51,6 +51,9 @@ pub enum HeroInstruction {
     /// 8. `[]` System Program Account
     
     BuyRecord(BuyRecordArgs),
+
+    /// for test
+    OnChainMinting
 }
 
 impl HeroInstruction{
@@ -70,6 +73,7 @@ impl HeroInstruction{
             2 => {
                 Self::BuyRecord(Self::unpack_buy_record_args(rest)?)
             },
+            3 => Self::OnChainMinting,
             _ => return Err(InvalidInstruction.into()),
         })
     }
