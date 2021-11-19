@@ -6,6 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 pub const NFT_COUNT: usize = 12;
 pub const NFT_RECORD_SIZE: usize = 250; // 133
+pub const REPO_ACCOUNT_SEED: &str = "hallofheros";
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub struct NFTRecord{

@@ -19,9 +19,7 @@ pub enum HeroInstruction {
     ///
     /// 0. `[signer]` The account of the person adding the hero
     /// 1. `[writable]` Our repository account should be created prior to this instruction. It will hold all infos about our heros.
-    /// 2. `[]` The associated_token_account of nft mint token account
-    /// 3. `[]` PDA of this repository program to get approved from ATokenAccount
-    /// 4. `[]` Token Program Account
+
     AddRecord(AddRecordArgs),
 
     /// Set Hero price
@@ -40,15 +38,19 @@ pub enum HeroInstruction {
     ///
     /// Accounts expected:
     ///
-    /// 0. `[signer, writable]` The account of the person buys hero
-    /// 1. `[writable]` Previous owner of nft
-    /// 2. `[writable]` Repository account
-    /// 3. `[]` The NFT mint token account of which price will be changed
-    /// 4. `[]` The NFT token account from which send token
-    /// 5. `[]` The NFT token account to which receive token
-    /// 6. `[]` PDA of this repository program to get approved from ATokenAccount
-    /// 7. `[]` Token Program Account
-    /// 8. `[]` System Program Account
+    /// 0. `[signer]` The admin account who has update authority of NFTs
+    /// 1. `[signer, writable]` The account of the person buys hero
+    /// 2. `[writable]` Previous owner of nft
+    /// 3. `[writable]` Repository account
+    /// 4. `[]` The Dead NFT Mint
+    /// 5. `[]` The Dead NFT Token Account
+    /// 6. `[]` The Dead NFT Metadata Account
+    /// 7. `[]` New NFT mint
+    /// 8. `[]` The NFT token account from which send token
+    /// 9. `[]` The NFT token account to which receive token
+    /// 10. `[]` Token Program Account
+    /// 11. `[]` Token Metadata Program Account
+    /// 12. `[]` System Program Account
     
     BuyRecord(BuyRecordArgs),
 
